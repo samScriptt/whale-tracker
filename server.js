@@ -53,6 +53,65 @@ app.get('/api/baleias', async (req, res) => {
   }
 });
 
+
+// Rota de Agregação: Volume total em 24h
+app.get('/api/baleias/stats', async (req, res) => {
+    try {
+    const resultado = await client.search({
+        index: 'baleias',
+        size: 0, // Não queremos a lista de baleias, SÓ queremos o resultado da conta!
+        query: {
+        range: {
+            data_hora: {
+            gte: 'now-24h' // Matemática de data nativa do Elasticsearch (Maior ou igual a agora menos 24h)
+            }
+        }
+        },
+        aggs: {
+        volume_total_btc: {
+            sum: { field: 'valor_btc' } // A mágica acontece aqui (Equivalente ao SUM do SQL)
+        }
+        }
+    });
+
+    // Extrai apenas o número da resposta gigante do ES
+    const totalBtc = resultado.aggregations.volume_total_btc.value;
+    res.json({ total_btc: totalBtc });
+
+    } catch (erro) {
+    console.error("Erro na agregação:", erro.message);
+    res.json({ total_btc: 0 });
+    }
+});
+
+// Rota de Busca: Filtrar baleias por pedaço do Hash
+app.get('/api/baleias/buscar', async (req, res) => {
+    try {
+    // Pegamos o que o usuário digitou na barra (ex: ?q=1A1z)
+    const termo = req.query.q; 
+
+    const resultado = await client.search({
+        index: 'baleias',
+        query: {
+        wildcard: {
+            // O ".keyword" é um superpoder do ES para buscas exatas em pedaços de texto
+            "hash.keyword": `*${termo}*` 
+        }
+        },
+        sort: [{ data_hora: { order: 'desc' } }],
+        size: 50
+    });
+
+    const baleias = resultado.hits.hits.map(hit => hit._source);
+    res.json(baleias);
+
+    } catch (erro) {
+    console.error("Erro na busca:", erro.message);
+    res.json([]);
+    }
+});
+
+
 // ==========================================
 // LÓGICA DO WEBSOCKET (A CAÇA ÀS BALEIAS)
 // ==========================================
